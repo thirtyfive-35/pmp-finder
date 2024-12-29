@@ -2,6 +2,8 @@
 
 This project is a Python script designed to discover subdomains of a given domain and find its GitHub dorks. The results will be saved in a file.
 
+![PMPFinder Screenshot](./images/pmp-photo.png)
+
 ## Requirements
 
 To install the required dependencies for the project, follow these steps:
@@ -35,6 +37,7 @@ When the script runs, the following output files will be created:
 
     ```
     <domain>_subdomains.txt
+    <domain>http_subdomains.txt
     <domain>_github_dorks.txt
     ```
 
