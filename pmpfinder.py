@@ -5,10 +5,15 @@ import signal
 import os
 
 class SubdomainScanner:
-    def __init__(self, domain):
+    def __init__(self, domain, tools):
         self.domain = domain
+        self.tools = tools.split(",")  # Araçları listeye dönüştür
         self.process = None
-        self.output_file = f"{domain}_amass_output.txt"
+        self.output_files = {
+            "amass": f"{domain}_amass",
+            "subfinder": f"{domain}_subfinder",
+            "assetfinder": f"{domain}_assetfinder"
+        }
         self.report_dir = "report"
         self.create_report_directory()
 
@@ -24,28 +29,69 @@ class SubdomainScanner:
             self.process.terminate()  # Amass sürecini sonlandır
         print("Program sonlandırılıyor...")
 
+
+    def run_subfinder(self, command, output_file):
+
+        """Belirtilen komutu çalıştırır, çıktıyı sadece komutla yönlendirir."""
+        try:
+            print(f"Running command: {' '.join(command)}")
+            # Komutu çalıştır ve konsol çıktısını kullan
+            self.process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.process.wait()
+            print(f"Command finished: {' '.join(command)}")
+        except Exception as e:
+            print(f"An error occurred while running command: {str(e)}")
+
+
+    def subfinder_scan(self):
+        """Subfinder taraması."""
+        print("*****************************Starting subfinder Scanning*************************************")
+        subfinder_command = [
+            "subfinder",
+            "-d", self.domain,
+            "-o", os.path.join(self.report_dir, f"{self.output_files['subfinder']}_subdomains.txt")
+        ]
+        self.run_subfinder(subfinder_command, self.output_files["subfinder"])
+
+    def assetfinder_scan(self):
+        """Assetfinder taraması."""
+        print("*****************************Starting assetfinder Scanning*************************************")
+
+        assetfinder_command = ["assetfinder", "--subs-only", self.domain]
+        #output_file = self.output_files["assetfinder"]
+        output_file = os.path.join(self.report_dir, f"{self.domain}_assetfinder_subdomains.txt")
+        try:
+            with open(output_file, "w") as file:
+                self.process = subprocess.Popen(assetfinder_command, stdout=file, stderr=subprocess.PIPE)
+                self.process.wait()
+            print(f"Results saved in {output_file}")
+        except Exception as e:
+            print(f"An error occurred while running assetfinder: {str(e)}")
+
+
     def amass_scan(self):
         """Amass taramasını çalıştırır ve çıktıyı dosyaya kaydeder."""
+        print("*****************************Starting amass Scanning*************************************")
         try:
             print(f"Scanning the domain {self.domain}...")
-            amass_command = ["amass", "enum", "-d", self.domain, "-o", self.output_file]
+            amass_command = ["amass", "enum", "-d", self.domain, "-o", self.output_files['amass']]
             self.process = subprocess.Popen(amass_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
             # Çıktıyı okur ve dosyaya yazar, süreç devam ettiği sürece
-            with open(self.output_file, "a") as file:
+            with open(self.output_files['amass'], "a") as file:
                 while self.process.poll() is None:  
                     output = self.process.stdout.readline()  
                     if output:
                         file.write(output.decode())  
                 self.process.wait()  
-            print(f"Scan complete. Results saved in {self.output_file}.")
+            print(f"Scan complete. Results saved in {self.output_files['amass']}.")
         except Exception as e:
             print(f"An error occurred: {str(e)}")
 
     def extract_subdomains_from_file(self):
         """Amass çıktısındaki subdomain'leri ayıklar."""
         try:
-            with open(self.output_file, "r") as file:
+            with open(self.output_files["amass"], "r") as file:
                 data = file.readlines()
 
             subdomains = set()
@@ -56,7 +102,7 @@ class SubdomainScanner:
 
             return sorted(subdomains)
         except FileNotFoundError:
-            print(f"File not found: {self.output_file}")
+            print(f"File not found: {self.output_files['amass']}")
             return []
 
     def run_httprobe(self, subdomains):
@@ -91,14 +137,14 @@ class SubdomainScanner:
     def save_to_report(self, subdomains, http_subdomains):
         """Sonuçları 'report' klasörüne kaydeder."""
         # Subdomain'leri dosyaya kaydet
-        subdomains_file = os.path.join(self.report_dir, f"{self.domain}_subdomains.txt")
+        subdomains_file = os.path.join(self.report_dir, f"{self.domain}_amass_subdomains.txt")
         with open(subdomains_file, "w") as file:
             for subdomain in subdomains:
                 file.write(f"{subdomain}\n")
         print(f"Subdomains saved to {subdomains_file}.")
 
         # HTTP/S aktif subdomain'leri dosyaya kaydet
-        http_subdomains_file = os.path.join(self.report_dir, f"{self.domain}_http_subdomains.txt")
+        http_subdomains_file = os.path.join(self.report_dir, f"{self.domain}_amass_http_subdomains.txt")
         with open(http_subdomains_file, "w") as file:
             for subdomain in http_subdomains:
                 file.write(f"{subdomain}\n")
@@ -106,9 +152,9 @@ class SubdomainScanner:
 
     def remove_amass_output(self):
         """Temp Amass output dosyasını siler."""
-        if os.path.exists(self.output_file):
-            os.remove(self.output_file)
-            print(f"{self.output_file} has been removed.")
+        if os.path.exists(self.output_files['amass']):
+            os.remove(self.output_files['amass'])
+            print(f"{self.output_files['amass']} has been removed.")
     def generate_github_dorks(self,file_name):
         # Dosya adındaki uzantıyı kaldır
         without_suffix = file_name.split('.')[0]
@@ -278,35 +324,46 @@ def print_banner():
 def main():
     print_banner()  
     
-    if len(sys.argv) < 2:
-        print("Please provide a domain name.")
+
+    if len(sys.argv) < 3:
+        print("Usage: python pmpfinder.py <domain> --type <tools>")
+        print("Example: python pmpfinder.py example.com --type amass,subfinder,assetfinder,gitdork")
         sys.exit(1)
 
     domain = sys.argv[1]
+    if "--type" not in sys.argv:
+        print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
+        sys.exit(1)
 
-    # Program kapanmaya çalıştığında SIGINT sinyalini yakala
-    scanner = SubdomainScanner(domain)
+    tools = sys.argv[sys.argv.index("--type") + 1]
+    scanner = SubdomainScanner(domain, tools)
     signal.signal(signal.SIGINT, scanner.handle_interrupt)
 
-    # Amass taramasını başlat
-    scanner.amass_scan()
+    # Seçilen araçları çalıştır
+    if "subfinder" in scanner.tools:
+        scanner.subfinder_scan()
+    if "assetfinder" in scanner.tools:
+        scanner.assetfinder_scan()
+    if "amass" in scanner.tools:
+        scanner.amass_scan()
+        # Amass çıktısını dosyadan alıp subdomain'leri ayıkla
+        subdomains = scanner.extract_subdomains_from_file()
 
-    # Amass çıktısını dosyadan alıp subdomain'leri ayıkla
-    subdomains = scanner.extract_subdomains_from_file()
+        # Subdomain'leri ekrana yazdır
+        scanner.display_subdomains(subdomains)
 
-    # Subdomain'leri ekrana yazdır
-    scanner.display_subdomains(subdomains)
+        # Httprobe ile aktif HTTP(S) subdomain'lerini kontrol et
+        http_subdomains = scanner.run_httprobe(list(subdomains))
 
-    # Httprobe ile aktif HTTP(S) subdomain'lerini kontrol et
-    http_subdomains = scanner.run_httprobe(list(subdomains))
+        # HTTP(S) subdomain'lerini ekrana yazdır
+        scanner.display_http_subdomains(http_subdomains)
 
-    # HTTP(S) subdomain'lerini ekrana yazdır
-    scanner.display_http_subdomains(http_subdomains)
+        scanner.generate_github_dorks(domain)
 
-    scanner.generate_github_dorks(domain)
+        # Sonuçları report klasörüne kaydet
+        scanner.save_to_report(subdomains, http_subdomains)
 
-    # Sonuçları report klasörüne kaydet
-    scanner.save_to_report(subdomains, http_subdomains)
+
 
     # Amass output dosyasını sil
     scanner.remove_amass_output()
