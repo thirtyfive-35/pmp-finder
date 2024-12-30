@@ -155,6 +155,7 @@ class SubdomainScanner:
         if os.path.exists(self.output_files['amass']):
             os.remove(self.output_files['amass'])
             print(f"{self.output_files['amass']} has been removed.")
+
     def generate_github_dorks(self,file_name):
         # Dosya adındaki uzantıyı kaldır
         without_suffix = file_name.split('.')[0]
@@ -298,6 +299,39 @@ class SubdomainScanner:
 
         print(f"Github Dorks saved to {dork_file_path}.")
 
+    def merge_unique_subdomains(self, output_file):
+        """
+        Merges subdomains from files that start with the given domain and end with '_subdomains.txt'.
+        Writes unique and sorted subdomains to the specified output file.
+        """
+        unique_subdomains = set()
+        
+        # Filter files: must start with the domain and end with '_subdomains.txt'
+        txt_files = [
+            f for f in os.listdir(self.report_dir)
+            if f.startswith(f"{self.domain}_") and f.endswith('_subdomains.txt')
+        ]
+
+        # Read each file and collect subdomains
+        for file in txt_files:
+            file_path = os.path.join(self.report_dir, file)
+            try:
+                with open(file_path, 'r') as f:
+                    # Normalize lines: strip whitespace and remove empty lines
+                    unique_subdomains.update(line.strip() for line in f.read().splitlines() if line.strip())
+                print(f"[INFO] Subdomains from '{file}' have been read.")
+            except FileNotFoundError:
+                print(f"[ERROR] File '{file}' not found.")
+
+        # Write unique subdomains to the output file
+        with open(output_file, 'w') as output:
+            output.write('\n'.join(sorted(unique_subdomains)))
+
+        print(f"[INFO] Unique subdomains have been written to '{output_file}'.")
+
+
+
+
 
 def print_banner():
     
@@ -323,17 +357,22 @@ def print_banner():
 
 def main():
     print_banner()  
-    
 
+
+    print("Welcome to PMPFinder!")
+    
     if len(sys.argv) < 3:
-        print("Usage: python pmpfinder.py <domain> --type <tools>")
-        print("Example: python pmpfinder.py example.com --type amass,subfinder,assetfinder,gitdork")
+        print("Usage: python pmpfinder.py <domain> --type <tools> [--onefile]")
+        print("Example: python pmpfinder.py example.com --type amass,subfinder,assetfinder,gitdork --onefile")
         sys.exit(1)
 
     domain = sys.argv[1]
     if "--type" not in sys.argv:
         print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
         sys.exit(1)
+
+
+    ######
 
     tools = sys.argv[sys.argv.index("--type") + 1]
     scanner = SubdomainScanner(domain, tools)
@@ -344,6 +383,8 @@ def main():
         scanner.subfinder_scan()
     if "assetfinder" in scanner.tools:
         scanner.assetfinder_scan()
+    if "gitdork" in scanner.tools:
+        scanner.generate_github_dorks(domain)
     if "amass" in scanner.tools:
         scanner.amass_scan()
         # Amass çıktısını dosyadan alıp subdomain'leri ayıkla
@@ -358,10 +399,12 @@ def main():
         # HTTP(S) subdomain'lerini ekrana yazdır
         scanner.display_http_subdomains(http_subdomains)
 
-        scanner.generate_github_dorks(domain)
-
         # Sonuçları report klasörüne kaydet
         scanner.save_to_report(subdomains, http_subdomains)
+
+    if "--onefile" in sys.argv:
+        output_file = os.path.join(scanner.report_dir, f"{domain}_merged_subdomains.txt")
+        scanner.merge_unique_subdomains(output_file)
 
 
 
