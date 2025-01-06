@@ -496,9 +496,14 @@ class port_scanner:
 
 
 
-def print_banner():
-    
-    banner = """
+
+class PMPFinderApp:
+    def __init__(self):
+        self.scanner = None
+        self.domain=None
+
+    def print_banner(self):
+        banner = """
 
     
                                     /$$$$$$  /$$                 /$$                    
@@ -515,89 +520,78 @@ def print_banner():
 
 
     """
-    print(banner)
+        print(banner)
 
+    def parse_arguments(self):
+        help_parser = HelpParser()
+        args = help_parser.parse_args()
+        return args
 
-def main():
-    print_banner()  
+    def initialize_scanner(self, domain, tools):
+        self.scanner = SubdomainScanner(domain, tools)
+        signal.signal(signal.SIGINT, self.scanner.handle_interrupt)
 
+    def run(self):
+        self.print_banner()
+        print("Welcome to PMPFinder!")
 
-    print("Welcome to PMPFinder!")
+        if len(sys.argv) < 3:
+            print("Usage: python pmpfinder.py <domain> --type <tools> [--onefile]")
+            print("Example: python pmpfinder.py example.com --type amass,subfinder,assetfinder,gitdork --onefile")
+            sys.exit(1)
 
-    help_parser = HelpParser()
-    args = help_parser.parse_args()
-    
-    if len(sys.argv) < 3:
-        print("Usage: python pmpfinder.py <domain> --type <tools> [--onefile]")
-        print("Example: python pmpfinder.py example.com --type amass,subfinder,assetfinder,gitdork --onefile")
-        sys.exit(1)
+        self.domain= sys.argv[1]
 
-    domain = sys.argv[1]
-    # --type veya --bruteforce parametresi olmadan işlem yapılamaz
-    if "--type" not in sys.argv and "--bruteforce" not in sys.argv:
-        print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
-        sys.exit(1)
+        if "--type" not in sys.argv and "--bruteforce" not in sys.argv:
+            print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
+            sys.exit(1)
 
-    scanner = None  # scanner nesnesi burada tanımlanıyor
+        tools = None
+        if "--type" in sys.argv:
+            tools = sys.argv[sys.argv.index("--type") + 1].split(',')
+            self.initialize_scanner(self.domain, tools)
 
-    # --type parametresi varsa, araçları ayarla
-    if "--type" in sys.argv:
-        tools = sys.argv[sys.argv.index("--type") + 1].split(',')
-        scanner = SubdomainScanner(domain, tools)
-        signal.signal(signal.SIGINT, scanner.handle_interrupt)
+            if "subfinder" in self.scanner.tools:
+                self.scanner.subfinder_scan()
+            if "assetfinder" in self.scanner.tools:
+                self.scanner.assetfinder_scan()
+            if "gitdork" in self.scanner.tools:
+                self.scanner.generate_github_dorks(self.domain)
+            if "amass" in self.scanner.tools:
+                self.scanner.amass_full_exec()
 
-        ######
-        # Seçilen araçları çalıştır
-        if "subfinder" in scanner.tools:
-            scanner.subfinder_scan()
-        if "assetfinder" in scanner.tools:
-            scanner.assetfinder_scan()
-        if "gitdork" in scanner.tools:
-            scanner.generate_github_dorks(domain)
-        if "amass" in scanner.tools:
-            scanner.amass_full_exec()
-            
-    # Eğer scanner yoksa ve --bruteforce parametresi varsa, scanner nesnesi oluştur
-    if "--bruteforce" in sys.argv and scanner is None:
-        scanner = SubdomainScanner(domain)
+        if "--bruteforce" in sys.argv:
+            self.handle_bruteforce(self.domain)
 
-    # --bruteforce parametresi varsa, bruteforce işlemini gerçekleştir
-    if "--bruteforce" in sys.argv:
+        if "--onefile" in sys.argv:
+            output_file = os.path.join(self.scanner.report_dir, f"{self.domain}_merged_subdomains.txt")
+            file_process.merge_unique_subdomains(self.domain, output_file)
+
+        if "--http-mode" in sys.argv:
+            http_mode = port_scanner(self.domain)
+            http_mode.read_and_save_http_sub()
+
+        file_process.remove_amass_output(self.domain)
+
+    def handle_bruteforce(self, domain):
         rate_limit = "100"
         rate_limit_trusted = "500"
-        wordlist = "resolvers/min-sub.txt"  # Varsayılan wordlist dosyası
-        
-        # "--rate-limit" ve "--rate-limit-trusted" parametrelerini kontrol et
+        wordlist = "resolvers/min-sub.txt"
+
         if "--rate-limit" in sys.argv:
             rate_limit = sys.argv[sys.argv.index("--rate-limit") + 1]
         if "--rate-limit-trusted" in sys.argv:
             rate_limit_trusted = sys.argv[sys.argv.index("--rate-limit-trusted") + 1]
-
-        # "-w" parametresini kontrol et ve wordlist dosyasını ayarla
         if "-w" in sys.argv:
             wordlist = sys.argv[sys.argv.index("-w") + 1]
 
-        # Puredns bruteforce fonksiyonunu çalıştır
-        scanner.puredns_bruteforce(rate_limit, rate_limit_trusted, wordlist)
+        if self.scanner is None:
+            self.scanner = SubdomainScanner(self.domain)
 
-    if "--onefile" in sys.argv:
-        output_file = os.path.join(scanner.report_dir, f"{domain}_merged_subdomains.txt")
-
-        file_process.merge_unique_subdomains(domain,output_file)
-    
-    # --onefile parametresi varsa, tüm subdomain'leri tek dosyaya birleştir
-    if "--http-mode" in sys.argv:
-        http_mode = port_scanner(domain)
-        http_mode.read_and_save_http_sub()
-
-    
-
-
-    # Amass output dosyasını sil
-    file_process.remove_amass_output(domain)
-
-
+        self.scanner.puredns_bruteforce(rate_limit, rate_limit_trusted, wordlist)
 
 if __name__ == "__main__":
-    main()
+    app = PMPFinderApp()
+    app.run()
+
 
