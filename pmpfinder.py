@@ -3,6 +3,58 @@ import sys
 import subprocess
 import signal
 import os
+import argparse
+
+
+
+class HelpParser:
+    def __init__(self):
+        self.parser = argparse.ArgumentParser(
+            description="PMPFinder: A tool for subdomain enumeration using various tools like subfinder, assetfinder, amass, and bruteforce."
+        )
+
+        # Argumentleri tanımla
+        self.parser.add_argument(
+            "domain", type=str, help="Target domain for subdomain enumeration."
+        )
+        self.parser.add_argument(
+            "--type",
+            type=str,
+            help="Comma separated list of tools to use (e.g., 'subfinder,assetfinder,amass').",
+            required=True,
+        )
+        self.parser.add_argument(
+            "--bruteforce", action="store_true", help="Run bruteforce subdomain enumeration."
+        )
+        self.parser.add_argument(
+            "-w", type=str, default="resolvers/min-sub.txt", help="Wordlist for bruteforce (default: resolvers/min-sub.txt)."
+        )
+        self.parser.add_argument(
+            "--rate-limit", type=str, default="100", help="Rate limit for bruteforce (default: 100)."
+        )
+        self.parser.add_argument(
+            "--rate-limit-trusted", type=str, default="500", help="Rate limit for trusted domains (default: 500)."
+        )
+        self.parser.add_argument(
+            "--onefile", action="store_true", help="Merge and save results into a single file."
+        )
+
+    def print_help_examples(self):
+        print("\nExamples:")
+        print("1. Run with subdomain enumeration tools (subfinder, assetfinder, amass) and bruteforce:\n")
+        print("   python pmpfinder.py teslamotors.com --type subfinder,assetfinder,amass --bruteforce -w resolvers/output_part_1.txt --rate-limit 100 --rate-limit-trusted 500 --onefile\n")
+        print("2. Run with subdomain enumeration tools (subfinder, assetfinder) without bruteforce:\n")
+        print("   python pmpfinder.py teslamotors.com --type subfinder,assetfinder\n")
+        print("3. Run with subdomain enumeration tools (subfinder, amass) and bruteforce:\n")
+        print("   python pmpfinder.py teslamotors.com --type subfinder,amass --bruteforce -w resolvers/output_part_1.txt --rate-limit 100 --rate-limit-trusted 500\n")
+        print("4. Run with bruteforce only (without any other tools):\n")
+        print("   python pmpfinder.py teslamotors.com --bruteforce -w resolvers/output_part_1.txt --rate-limit 100 --rate-limit-trusted 500\n")
+
+
+    def parse_args(self):
+        self.print_help_examples()
+        return self.parser.parse_args()
+
 
 class SubdomainScanner:
     def __init__(self, domain, tools=None):
@@ -393,6 +445,9 @@ def main():
 
 
     print("Welcome to PMPFinder!")
+
+    help_parser = HelpParser()
+    args = help_parser.parse_args()
     
     if len(sys.argv) < 3:
         print("Usage: python pmpfinder.py <domain> --type <tools> [--onefile]")
