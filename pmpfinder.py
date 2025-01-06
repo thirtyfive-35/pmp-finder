@@ -38,6 +38,9 @@ class HelpParser:
         self.parser.add_argument(
             "--onefile", action="store_true", help="Merge and save results into a single file."
         )
+        self.parser.add_argument(
+            "--http-mode", action="store_true", help="Enable HTTP mode for probing subdomains."
+        )
 
     def print_help_examples(self):
         print("\nExamples:")
@@ -179,12 +182,12 @@ class SubdomainScanner:
         self.display_subdomains_amass(subdomains)
 
         # Httprobe ile aktif HTTP(S) subdomain'lerini kontrol et
-        http_subdomains = self.run_httprobe(list(subdomains))
+        #http_subdomains = self.run_httprobe(list(subdomains))
 
         # HTTP(S) subdomain'lerini ekrana yazdır
-        self.display_http_amass_subdomains(http_subdomains)
+        #self.display_http_amass_subdomains(http_subdomains)
 
-        file_process.amass_save_to_report(self.domain,subdomains, http_subdomains)
+        file_process.amass_save_to_report(self.domain,subdomains)
 
 
 
@@ -205,16 +208,6 @@ class SubdomainScanner:
             print(f"File not found: {self.output_files['amass']}")
             return []
 
-    def run_httprobe(self, subdomains):
-        """Subdomain'leri kontrol etmek için httprobe çalıştırır."""
-        print("\n[INFO] Starting HTTP probe...")
-        
-        
-        process = subprocess.Popen(['httprobe'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate(input="\n".join(subdomains).encode())
-        
-        
-        return stdout.decode().splitlines()
 
     def display_subdomains_amass(self, subdomains):
         
@@ -382,14 +375,7 @@ class SubdomainScanner:
 
 class file_process:
     def __init__(self, domain):
-        self.domain = domain
-        self.output_files = {
-            "amass": f"{domain}_amass",
-            "subfinder": f"{domain}_subfinder",
-            "assetfinder": f"{domain}_assetfinder",
-            "puredns": f"{domain}_puredns"
-        }
-        self.report_dir = "report"
+
         self.create_report_directory()
 
     def create_report_directory(self):
@@ -428,7 +414,7 @@ class file_process:
         print(f"[INFO] Unique subdomains have been written to '{output_file}'.")
 
     @staticmethod
-    def amass_save_to_report(domain,subdomains, http_subdomains,report_dir = "report"):
+    def amass_save_to_report(domain,subdomains,report_dir = "report"):
         """Sonuçları 'report' klasörüne kaydeder."""
         # Subdomain'leri dosyaya kaydet
         subdomains_file = os.path.join(report_dir, f"{domain}_amass_subdomains.txt")
@@ -437,12 +423,6 @@ class file_process:
                 file.write(f"{subdomain}\n")
         print(f"Subdomains saved to {subdomains_file}.")
 
-        # HTTP/S aktif subdomain'leri dosyaya kaydet
-        http_subdomains_file = os.path.join(report_dir, f"{domain}_amass_http_subdomains.txt")
-        with open(http_subdomains_file, "w") as file:
-            for subdomain in http_subdomains:
-                file.write(f"{subdomain}\n")
-        print(f"Active HTTP(S) subdomains saved to {http_subdomains_file}.")
 
     @staticmethod
     def remove_amass_output(domain):
@@ -452,6 +432,67 @@ class file_process:
         if os.path.exists(output_file):
             os.remove(output_file)
             print(f"{output_file} has been removed.")
+
+
+class port_scanner:
+
+    def __init__(self, domain):
+        self.report_dir = "report"
+        self.domain = domain
+
+    def read_and_save_http_sub(self):
+        # http_sub klasörünü oluştur
+        http_sub_dir = os.path.join(self.report_dir, "http_sub")
+        os.makedirs(http_sub_dir, exist_ok=True)
+
+        # Rapor klasöründen dosyaları filtrele
+        txt_files = [
+            f for f in os.listdir(self.report_dir)
+            if f.startswith(f"{self.domain}_") and f.endswith('_subdomains.txt')
+        ]
+
+        # Her bir dosya için işlemleri gerçekleştir
+        for txt_file in txt_files:
+            # _subdomains.txt ifadesini _http_subdomains.txt olarak değiştir
+            output_file = os.path.join(http_sub_dir, txt_file.replace('_subdomains.txt', '_http_subdomains.txt'))
+            file_path = os.path.join(self.report_dir, txt_file)
+            
+            try:
+                # Subdomain'leri oku
+                with open(file_path, "r") as file:
+                    subdomains = [line.strip() for line in file if line.strip()]
+                
+                # Subdomain'ler için httprobe çalıştır
+                active_subdomains = self.run_httprobe(subdomains)
+                
+                # Sonuçları kaydet
+                with open(output_file, "w") as out_file:
+                    out_file.write("\n".join(active_subdomains))
+                
+                print(f"[INFO] Results saved to {output_file}")
+            except FileNotFoundError:
+                print(f"[ERROR] File not found: {file_path}")
+            except Exception as e:
+                print(f"[ERROR] An error occurred: {str(e)}")
+
+
+    def run_httprobe(self, subdomains):
+        """Subdomain'leri kontrol etmek için httprobe çalıştırır."""
+        print("\n[INFO] Starting HTTP probe...")
+        try:
+            process = subprocess.Popen(
+                ['httprobe'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            stdout, stderr = process.communicate(input="\n".join(subdomains).encode())
+            if process.returncode == 0:
+                return stdout.decode().splitlines()
+            else:
+                print(f"[ERROR] httprobe failed with error: {stderr.decode()}")
+                return []
+        except Exception as e:
+            print(f"[ERROR] An error occurred while running httprobe: {str(e)}")
+            return []
+
 
 
 
@@ -539,13 +580,17 @@ def main():
         # Puredns bruteforce fonksiyonunu çalıştır
         scanner.puredns_bruteforce(rate_limit, rate_limit_trusted, wordlist)
 
-    # --onefile parametresi varsa, tüm subdomain'leri tek dosyaya birleştir
     if "--onefile" in sys.argv:
         output_file = os.path.join(scanner.report_dir, f"{domain}_merged_subdomains.txt")
 
-        #file_oparations = file_process(domain)
-
         file_process.merge_unique_subdomains(domain,output_file)
+    
+    # --onefile parametresi varsa, tüm subdomain'leri tek dosyaya birleştir
+    if "--http-mode" in sys.argv:
+        http_mode = port_scanner(domain)
+        http_mode.read_and_save_http_sub()
+
+    
 
 
     # Amass output dosyasını sil
