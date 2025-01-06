@@ -5,14 +5,15 @@ import signal
 import os
 
 class SubdomainScanner:
-    def __init__(self, domain, tools):
+    def __init__(self, domain, tools=None):
         self.domain = domain
-        self.tools = tools.split(",")  # Araçları listeye dönüştür
+        self.tools = tools.split(",") if isinstance(tools, str) else tools or [] # Araçları listeye dönüştür
         self.process = None
         self.output_files = {
             "amass": f"{domain}_amass",
             "subfinder": f"{domain}_subfinder",
-            "assetfinder": f"{domain}_assetfinder"
+            "assetfinder": f"{domain}_assetfinder",
+            "puredns": f"{domain}_puredns"
         }
         self.report_dir = "report"
         self.create_report_directory()
@@ -67,6 +68,38 @@ class SubdomainScanner:
             print(f"Results saved in {output_file}")
         except Exception as e:
             print(f"An error occurred while running assetfinder: {str(e)}")
+
+    def puredns_bruteforce(self, rate_limit, rate_limit_trusted,wordlist):
+        """Puredns brute-force taraması."""
+        print("***************************** Starting PureDNS Bruteforce *************************************")
+        try:
+            # Dosya adını domain'e göre oluştur
+            output_file = os.path.join(
+                self.report_dir,
+                f"{self.output_files['puredns']}_subdomains.txt"
+            )
+            
+            # Puredns komutunu hazırla
+            puredns_command = [
+            "./puredns", "bruteforce", wordlist, self.domain,
+            "--rate-limit", rate_limit,
+            "--rate-limit-trusted", rate_limit_trusted,
+            "--write", output_file
+            ]
+            
+            print(f"Running command: {' '.join(puredns_command)}")
+            self.process = subprocess.Popen(puredns_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = self.process.communicate()
+
+            if self.process.returncode == 0:
+                print(f"PureDNS Brute-Force completed. Results saved in {output_file}")
+            else:
+                print(f"PureDNS Brute-Force failed with error:\n{stderr.decode()}")
+        except Exception as e:
+            print(f"An error occurred while running PureDNS: {str(e)}")
+
+
+
 
 
     def amass_scan(self):
@@ -367,46 +400,71 @@ def main():
         sys.exit(1)
 
     domain = sys.argv[1]
-    if "--type" not in sys.argv:
+    # --type veya --bruteforce parametresi olmadan işlem yapılamaz
+    if "--type" not in sys.argv and "--bruteforce" not in sys.argv:
         print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
         sys.exit(1)
 
+    scanner = None  # scanner nesnesi burada tanımlanıyor
 
-    ######
+    # --type parametresi varsa, araçları ayarla
+    if "--type" in sys.argv:
+        tools = sys.argv[sys.argv.index("--type") + 1].split(',')
+        scanner = SubdomainScanner(domain, tools)
+        signal.signal(signal.SIGINT, scanner.handle_interrupt)
 
-    tools = sys.argv[sys.argv.index("--type") + 1]
-    scanner = SubdomainScanner(domain, tools)
-    signal.signal(signal.SIGINT, scanner.handle_interrupt)
+        ######
+        # Seçilen araçları çalıştır
+        if "subfinder" in scanner.tools:
+            scanner.subfinder_scan()
+        if "assetfinder" in scanner.tools:
+            scanner.assetfinder_scan()
+        if "gitdork" in scanner.tools:
+            scanner.generate_github_dorks(domain)
+        if "amass" in scanner.tools:
+            scanner.amass_scan()
+            # Amass çıktısını dosyadan alıp subdomain'leri ayıkla
+            subdomains = scanner.extract_subdomains_from_file()
 
-    # Seçilen araçları çalıştır
-    if "subfinder" in scanner.tools:
-        scanner.subfinder_scan()
-    if "assetfinder" in scanner.tools:
-        scanner.assetfinder_scan()
-    if "gitdork" in scanner.tools:
-        scanner.generate_github_dorks(domain)
-    if "amass" in scanner.tools:
-        scanner.amass_scan()
-        # Amass çıktısını dosyadan alıp subdomain'leri ayıkla
-        subdomains = scanner.extract_subdomains_from_file()
+            # Subdomain'leri ekrana yazdır
+            scanner.display_subdomains(subdomains)
 
-        # Subdomain'leri ekrana yazdır
-        scanner.display_subdomains(subdomains)
+            # Httprobe ile aktif HTTP(S) subdomain'lerini kontrol et
+            http_subdomains = scanner.run_httprobe(list(subdomains))
 
-        # Httprobe ile aktif HTTP(S) subdomain'lerini kontrol et
-        http_subdomains = scanner.run_httprobe(list(subdomains))
+            # HTTP(S) subdomain'lerini ekrana yazdır
+            scanner.display_http_subdomains(http_subdomains)
 
-        # HTTP(S) subdomain'lerini ekrana yazdır
-        scanner.display_http_subdomains(http_subdomains)
+            # Sonuçları report klasörüne kaydet
+            scanner.save_to_report(subdomains, http_subdomains)
 
-        # Sonuçları report klasörüne kaydet
-        scanner.save_to_report(subdomains, http_subdomains)
+    # Eğer scanner yoksa ve --bruteforce parametresi varsa, scanner nesnesi oluştur
+    if "--bruteforce" in sys.argv and scanner is None:
+        scanner = SubdomainScanner(domain)
 
+    # --bruteforce parametresi varsa, bruteforce işlemini gerçekleştir
+    if "--bruteforce" in sys.argv:
+        rate_limit = "100"
+        rate_limit_trusted = "500"
+        wordlist = "resolvers/min-sub.txt"  # Varsayılan wordlist dosyası
+        
+        # "--rate-limit" ve "--rate-limit-trusted" parametrelerini kontrol et
+        if "--rate-limit" in sys.argv:
+            rate_limit = sys.argv[sys.argv.index("--rate-limit") + 1]
+        if "--rate-limit-trusted" in sys.argv:
+            rate_limit_trusted = sys.argv[sys.argv.index("--rate-limit-trusted") + 1]
+
+        # "-w" parametresini kontrol et ve wordlist dosyasını ayarla
+        if "-w" in sys.argv:
+            wordlist = sys.argv[sys.argv.index("-w") + 1]
+
+        # Puredns bruteforce fonksiyonunu çalıştır
+        scanner.puredns_bruteforce(rate_limit, rate_limit_trusted, wordlist)
+
+    # --onefile parametresi varsa, tüm subdomain'leri tek dosyaya birleştir
     if "--onefile" in sys.argv:
         output_file = os.path.join(scanner.report_dir, f"{domain}_merged_subdomains.txt")
         scanner.merge_unique_subdomains(output_file)
-
-
 
     # Amass output dosyasını sil
     scanner.remove_amass_output()
