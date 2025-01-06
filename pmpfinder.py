@@ -4,6 +4,8 @@ import subprocess
 import signal
 import os
 import argparse
+import requests
+import time
 
 
 
@@ -41,6 +43,10 @@ class HelpParser:
         self.parser.add_argument(
             "--http-mode", action="store_true", help="Enable HTTP mode for probing subdomains."
         )
+        self.parser.add_argument(
+            "--virustotal", action="store_true", help="Enable VirusTotal API for subdomain discovery."
+        )
+
 
     def print_help_examples(self):
         print("\nExamples:")
@@ -153,7 +159,6 @@ class SubdomainScanner:
         except Exception as e:
             print(f"An error occurred while running PureDNS: {str(e)}")
 
-
     def amass_scan(self):
         """Amass taramasını çalıştırır ve çıktıyı dosyaya kaydeder."""
         print("*****************************Starting amass Scanning*************************************")
@@ -172,6 +177,7 @@ class SubdomainScanner:
             print(f"Scan complete. Results saved in {self.output_files['amass']}.")
         except Exception as e:
             print(f"An error occurred: {str(e)}")
+
     def amass_full_exec(self):
 
         self.amass_scan()
@@ -189,8 +195,6 @@ class SubdomainScanner:
 
         file_process.amass_save_to_report(self.domain,subdomains)
 
-
-
     def extract_amass_subdomains_from_file(self):
         """Amass çıktısındaki subdomain'leri ayıklar."""
         try:
@@ -207,7 +211,6 @@ class SubdomainScanner:
         except FileNotFoundError:
             print(f"File not found: {self.output_files['amass']}")
             return []
-
 
     def display_subdomains_amass(self, subdomains):
         
@@ -228,6 +231,41 @@ class SubdomainScanner:
             print("[INFO] No active HTTP(S) subdomains found.")
         print("++++++++++++++++++ showing amass subdomains +++++++++++++++++++++")
 
+    def virus_total_scan(self):
+
+        print("*****************************Starting virustotal subdomains Scanning*************************************")
+
+        with open('key.txt', 'r') as file:
+            self.key = file.readline()
+
+        url = "https://www.virustotal.com/api/v3/domains/23andme.com/subdomains?limit=500"
+
+        headers = {
+            "x-apikey": f"{self.key}"  
+        }
+
+        all_subdomains = []
+
+        while url:
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+
+                for item in data['data']:
+                    all_subdomains.append(item['id'])
+
+                url = data['links'].get('next')
+                
+                time.sleep(20)
+            else:
+                print(f"Hata: {response.status_code}")
+                break
+        output_file = os.path.join(self.report_dir, f"{self.domain}_virustotal_subdomains.txt")
+        with open(output_file, 'w') as file:
+            for subdomain in all_subdomains:
+                file.write(subdomain + '\n')
+        print(f"Toplam {len(all_subdomains)} subdomain finde and f'{self.domain}_virustotal_subdomains.txt' file saved.")
 
     def generate_github_dorks(self,file_name):
         # Dosya adındaki uzantıyı kaldır
@@ -542,6 +580,8 @@ class PMPFinderApp:
 
         self.domain= sys.argv[1]
 
+        args = self.parse_arguments()  # Argümanları burada alıyoruz
+
         if "--type" not in sys.argv and "--bruteforce" not in sys.argv:
             print("Please specify the tools using --type (e.g., amass,subfinder,assetfinder,gitdork).")
             sys.exit(1)
@@ -559,6 +599,9 @@ class PMPFinderApp:
                 self.scanner.generate_github_dorks(self.domain)
             if "amass" in self.scanner.tools:
                 self.scanner.amass_full_exec()
+            if "virustotal" in self.scanner.tools:
+                self.scanner.virus_total_scan()
+
 
         if "--bruteforce" in sys.argv:
             self.handle_bruteforce(self.domain)
@@ -593,5 +636,3 @@ class PMPFinderApp:
 if __name__ == "__main__":
     app = PMPFinderApp()
     app.run()
-
-
