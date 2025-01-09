@@ -236,7 +236,7 @@ class SubdomainScanner:
         print("*****************************Starting virustotal subdomains Scanning*************************************")
 
         with open('key.txt', 'r') as file:
-            self.key = file.readline()
+            self.key = file.readline().strip()
 
         url = "https://www.virustotal.com/api/v3/domains/23andme.com/subdomains?limit=500"
 
