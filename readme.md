@@ -29,6 +29,8 @@ To install the required dependencies for the project, follow these steps:
    ```bash
    cp resolvers/resolvers.txt /root/.config/puredns/resolvers.txt
    ```
+4. if you can use virustotal scan, you need to save the virustotal api to key.txt file, dont forget
+
 
 ### Additional Tools
 
