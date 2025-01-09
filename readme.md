@@ -15,11 +15,17 @@ To install the required dependencies for the project, follow these steps:
    pip install -r requirements.txt
    ```
 
+3. grant execution permission
+   
+   ```bash
+   chmod +x puredns
+   ```
+
 ### Additional Tools
 
 This script requires additional tools for subdomain discovery and GitHub dork search:
 
-- **httprobe** and **amass** need to be installed.
+- **httprobe**,**masscan**,**subfinder**,**assetfinder**,**massdns**, and **amass** need to be installed.
 
 ## Usage
 
