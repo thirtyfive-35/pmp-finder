@@ -12,13 +12,22 @@ To install the required dependencies for the project, follow these steps:
 2. Install the required Python dependencies using the `requirements.txt` file by running the following command:
 
    ```bash
+   cd pmp-finder
+   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. grant execution permission
+3. grant execution permission and settings conf file
    
    ```bash
    chmod +x puredns
+   ```
+   ```bash
+   sudo mkdir -p /root/.config/puredns
+   ```
+   ```bash
+   cp resolvers/resolvers.txt /root/.config/puredns/resolvers.txt
    ```
 
 ### Additional Tools
