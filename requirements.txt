@@ -1,8 +1,2 @@
-re
-sys
-subprocess
-signal
-os
 argparse
 requests
-time
