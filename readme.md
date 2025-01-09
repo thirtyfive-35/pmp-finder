@@ -39,6 +39,7 @@ Here are the available options for using the script:
 - **`--rate-limit RATE_LIMIT`**: Rate limit for bruteforce (default: `100`).
 - **`--rate-limit-trusted RATE_LIMIT_TRUSTED`**: Rate limit for trusted domains (default: `500`).
 - **`--onefile`**: Merge and save results into a single file.
+- **`--virustotal `**: Enable VirusTotal API for subdomain discovery.
 
 ### Examples
 
